@@ -1,0 +1,66 @@
+# =========================
+# Environment & Secrets
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Dependencies
+# =========================
+node_modules/
+
+# =========================
+# User-generated / Uploaded Files
+# =========================
+uploads/
+logs/
+
+# =========================
+# Logs
+# =========================
+*.log
+
+# =========================
+# IDE / Editor
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# Operating System
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# Temporary Files
+# =========================
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# =========================
+# PHP / Server Generated
+# =========================
+.phpunit.result.cache
+
+# =========================
+# Local Database / Backup Files
+# =========================
+*.sqlite
+*.sqlite3
+*.db
+
+# =========================
+# Backup / Export Files
+# =========================
+*.zip
+*.rar
+*.7z
+
+config.php
+test_qr.php
