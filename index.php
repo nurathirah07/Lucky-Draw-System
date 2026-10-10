@@ -4,82 +4,72 @@ require_once 'config.php';
 
 $settings = get_settings($pdo);
 $state = campaign_state($settings);
-$prizes = array_filter(array_map('trim', explode("\n", $settings['prize_info'])));
+$prizes = array_values(array_filter(array_map('trim', explode("\n", $settings['prize_info']))));
 
 $countdownTarget = null;
 if ($state === 'upcoming') $countdownTarget = $settings['campaign_start'];
 elseif ($state === 'active' && $settings['campaign_end'] !== '') $countdownTarget = $settings['campaign_end'];
 
-public_head($settings['campaign_title']);
+public_page_start($settings['campaign_title'], $settings['campaign_title']);
 ?>
-<div class="wrap">
-    <?php brand_block($settings['campaign_title']); ?>
-
-    <div class="card">
-        <div class="text-center" style="margin-bottom:14px">
-            <?php if ($state === 'active'): ?>
-                <span class="badge badge-green"><span class="dot"></span> Penyertaan dibuka</span>
-            <?php elseif ($state === 'upcoming'): ?>
-                <span class="badge badge-blue"><span class="dot"></span> Akan bermula</span>
-            <?php else: ?>
-                <span class="badge badge-red"><span class="dot"></span> Penyertaan telah ditutup</span>
-            <?php endif; ?>
+<div class="card" style="text-align:center">
+    <?php echo campaign_badge($state, 'ms'); ?>
+    <?php if ($countdownTarget): ?>
+        <p class="muted" style="margin-top:12px"><?php echo $state === 'upcoming' ? 'Bermula' : 'Tamat'; ?> pada <b style="color:var(--text)"><?php echo e(format_datetime($countdownTarget)); ?></b></p>
+        <div class="countdown" data-remaining="<?php echo max(0, strtotime($countdownTarget) - time()) * 1000; ?>">
+            <div><b data-u="d">00</b><span>Hari</span></div>
+            <div><b data-u="h">00</b><span>Jam</span></div>
+            <div><b data-u="m">00</b><span>Minit</span></div>
+            <div><b data-u="s">00</b><span>Saat</span></div>
         </div>
-
-        <?php if ($countdownTarget): ?>
-            <p class="text-center muted" style="font-size:14px">
-                <?php echo $state === 'upcoming' ? 'Bermula pada' : 'Tamat pada'; ?>
-                <strong style="color:var(--text)"><?php echo e(format_datetime($countdownTarget)); ?></strong>
-            </p>
-            <div class="countdown" data-target="<?php echo strtotime($countdownTarget) * 1000; ?>">
-                <div><b data-u="d">0</b><span>Hari</span></div>
-                <div><b data-u="h">0</b><span>Jam</span></div>
-                <div><b data-u="m">0</b><span>Minit</span></div>
-                <div><b data-u="s">0</b><span>Saat</span></div>
-            </div>
-        <?php elseif ($state === 'ended'): ?>
-            <p class="text-center muted">Terima kasih kepada semua peserta! Pemenang akan dihubungi melalui telefon / WhatsApp.</p>
-        <?php else: ?>
-            <p class="lead" style="margin-bottom:0">Imbas QR code pada produk anda dan sertai cabutan bertuah untuk memenangi hadiah menarik!</p>
-        <?php endif; ?>
-
-        <div class="steps">
-            <div class="step"><div class="step-num">1</div><div><div class="step-title">Imbas QR code</div><div class="step-desc">Gunakan kamera telefon pada label produk</div></div></div>
-            <div class="step"><div class="step-num">2</div><div><div class="step-title">Isi maklumat</div><div class="step-desc">Nama penuh &amp; nombor telefon bimbit</div></div></div>
-            <div class="step"><div class="step-num">3</div><div><div class="step-title">Tunggu cabutan</div><div class="step-desc">Pemenang dihubungi melalui WhatsApp</div></div></div>
-        </div>
-
-        <div class="highlight">
-            <h3>🎯 Setiap produk = 1 peluang</h3>
-            <p>Lebih banyak produk yang anda beli, lebih tinggi peluang untuk menang!</p>
-        </div>
-
-        <a href="check.php" class="btn btn-ghost btn-block mt-2">🔎 Semak penyertaan saya</a>
-    </div>
-
-    <?php if ($prizes): ?>
-    <div class="card">
-        <h3 style="font-size:16px;margin-bottom:12px">🏆 Hadiah</h3>
-        <div class="list">
-            <?php foreach ($prizes as $i => $prize): ?>
-                <div class="list-item"><span><?php echo e($prize); ?></span><span class="badge <?php echo $i === 0 ? 'badge-gold' : ''; ?>">#<?php echo $i + 1; ?></span></div>
-            <?php endforeach; ?>
-        </div>
-    </div>
+    <?php elseif ($state === 'ended'): ?>
+        <p class="muted" style="margin-top:12px">Terima kasih kepada semua peserta. Pemenang akan dihubungi melalui WhatsApp.</p>
+    <?php else: ?>
+        <p class="muted" style="margin-top:12px">Imbas QR code pada label produk anda dengan kamera telefon untuk menyertai cabutan bertuah.</p>
     <?php endif; ?>
 </div>
 
+<div class="card">
+    <div class="card-head"><div><div class="card-title">Cara menyertai</div><div class="card-sub">Guna aplikasi Kamera telefon anda.</div></div></div>
+    <div class="steps">
+        <div class="step"><span class="step-n">1</span><div><b>Buka aplikasi Kamera</b><span>Halakan kamera ke QR code pada label produk.</span></div></div>
+        <div class="step"><span class="step-n">2</span><div><b>Tekan pautan yang muncul</b><span>Pautan akan muncul di skrin apabila QR code dikesan. Tekan untuk membuka borang.</span></div></div>
+        <div class="step"><span class="step-n">3</span><div><b>Isi nama &amp; nombor telefon</b><span>Guna nombor yang sama untuk setiap produk.</span></div></div>
+        <div class="step"><span class="step-n">4</span><div><b>Tunggu cabutan</b><span>Pemenang akan dihubungi melalui WhatsApp.</span></div></div>
+    </div>
+    <hr class="divider">
+    <p class="small muted">Setiap produk = 1 penyertaan. Ada beberapa produk? Imbas setiap QR code satu persatu untuk lebih peluang menang.</p>
+</div>
+
+<?php if ($prizes): ?>
+<div class="card">
+    <div class="card-head"><div class="card-title">Hadiah</div></div>
+    <div class="kv">
+        <?php foreach ($prizes as $i => $prize): ?>
+            <div class="kv-row"><span><?php echo e($prize); ?></span><span class="faint small">#<?php echo $i + 1; ?></span></div>
+        <?php endforeach; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php public_actions([['Semak penyertaan saya', 'check.php', 'search']]); ?>
+
 <script>
+// Counts down from the time left according to the server, so a wrong phone clock
+// cannot break it. Reloads once when the campaign opens or closes.
 document.querySelectorAll('.countdown').forEach(function (el) {
-    var target = +el.dataset.target;
+    var remaining = +el.dataset.remaining, started = Date.now();
     function tick() {
-        var diff = Math.max(0, target - Date.now());
+        var diff = Math.max(0, remaining - (Date.now() - started));
         var parts = { d: Math.floor(diff / 864e5), h: Math.floor(diff / 36e5) % 24, m: Math.floor(diff / 6e4) % 60, s: Math.floor(diff / 1e3) % 60 };
         for (var k in parts) el.querySelector('[data-u="' + k + '"]').textContent = String(parts[k]).padStart(2, '0');
-        if (diff === 0) { clearInterval(timer); setTimeout(function () { location.reload(); }, 1500); }
+        if (diff === 0) {
+            clearInterval(timer);
+            if (remaining > 0) setTimeout(function () { location.reload(); }, 1500);
+        }
     }
     var timer = setInterval(tick, 1000);
     tick();
 });
 </script>
-<?php public_foot(); ?>
+<?php public_page_end(); ?>

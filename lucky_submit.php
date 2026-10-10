@@ -12,70 +12,42 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         header('Location: index.php');
         exit;
     }
-    $ok = $result['ok'];
-    public_head($ok ? 'Berjaya' : 'Tidak berjaya');
+    public_page_start($result['ok'] ? 'Berjaya' : 'Tidak berjaya', $settings['campaign_title']);
     ?>
-<div class="wrap">
-    <?php brand_block($settings['campaign_title']); ?>
-    <div class="card text-center">
-        <?php if ($ok): ?>
-            <div class="result-icon ok">🎉</div>
-            <h2 style="font-size:22px">Tahniah, <?php echo e($result['name']); ?>!</h2>
-            <p class="muted">Anda telah berjaya menyertai cabutan bertuah. Semoga bertuah!</p>
-
-            <div class="big-id">
-                <small>ID Pelanggan anda</small>
-                <strong class="mono"><?php echo e($result['customer_id']); ?></strong>
-            </div>
-
-            <div class="list" style="text-align:left">
-                <div class="list-item"><span class="muted">Kod produk</span><strong class="mono"><?php echo e($result['code']); ?></strong></div>
-                <div class="list-item"><span class="muted">Jumlah penyertaan anda</span><span class="badge badge-gold"><?php echo (int)$result['total']; ?> peluang</span></div>
-            </div>
-
-            <?php if ($result['name_changed']): ?>
-                <div class="alert alert-info mt-2" style="text-align:left">ℹ️ Nama untuk nombor ini telah dikemas kini kepada <strong><?php echo e($result['name']); ?></strong>.</div>
-            <?php endif; ?>
-
-            <?php if ($result['wa_sent']): ?>
-                <div class="alert alert-success mt-2">✅ Pengesahan telah dihantar ke WhatsApp anda.</div>
-            <?php elseif ($result['wa_link']): ?>
-                <a href="<?php echo e($result['wa_link']); ?>" class="btn btn-wa btn-block mt-2" target="_blank" rel="noopener">💬 Simpan bukti di WhatsApp</a>
-            <?php endif; ?>
-
-            <div class="btn-row mt-2">
-                <a href="check.php" class="btn btn-ghost" style="flex:1">🔎 Semak penyertaan</a>
-                <a href="index.php" class="btn btn-ghost" style="flex:1">🏠 Laman utama</a>
-            </div>
-        <?php else: ?>
-            <div class="result-icon bad">⚠️</div>
-            <div class="alert alert-error"><?php echo e($result['error']); ?></div>
-            <?php if (!empty($result['code'])): ?>
-                <a href="lucky.php?pid=<?php echo urlencode($result['code']); ?>" class="btn btn-primary btn-block">← Cuba lagi</a>
-            <?php endif; ?>
-            <a href="index.php" class="btn btn-ghost btn-block mt-1">🏠 Laman utama</a>
+<div class="card">
+    <?php if ($result['ok']): ?>
+        <?php status_block('ok', 'Penyertaan berjaya', 'Terima kasih, ' . $result['name'] . '. Penyertaan anda dalam ' . $settings['campaign_title'] . ' telah berjaya direkodkan.'); ?>
+        <div class="highlight-num" style="margin-top:20px">
+            <small>ID Pelanggan</small>
+            <strong class="mono"><?php echo e($result['customer_id']); ?></strong>
+        </div>
+        <div class="kv" style="margin-top:16px">
+            <div class="kv-row"><span>Kod produk</span><b class="mono"><?php echo e($result['code']); ?></b></div>
+            <div class="kv-row"><span>Jumlah penyertaan anda</span><b><?php echo (int)$result['total']; ?></b></div>
+        </div>
+        <p class="small muted" style="margin-top:16px">Sila simpan ID Pelanggan ini untuk rujukan. Setiap kod produk yang didaftarkan memberi anda satu peluang untuk menang. Pemenang akan dihubungi melalui WhatsApp selepas cabutan dijalankan.</p>
+        <?php if ($result['name_changed']): ?>
+            <div style="margin-top:16px"><?php echo alert_box('info', 'Nama untuk nombor ini telah dikemas kini kepada <b>' . e($result['name']) . '</b>.'); ?></div>
         <?php endif; ?>
-    </div>
+    <?php else: ?>
+        <?php status_block('error', 'Pendaftaran tidak berjaya', $result['error']); ?>
+    <?php endif; ?>
 </div>
-    <?php if ($ok): ?>
-<script>
-(function () {
-    var colors = ['#e11d48', '#fbbf24', '#fb7185', '#22c55e', '#60a5fa', '#fff'];
-    for (var i = 0; i < 90; i++) {
-        var c = document.createElement('div');
-        c.className = 'confetti';
-        c.style.left = Math.random() * 100 + 'vw';
-        c.style.background = colors[i % colors.length];
-        document.body.appendChild(c);
-        c.animate([
-            { transform: 'translateY(0) rotate(0)', opacity: 1 },
-            { transform: 'translateY(' + (innerHeight + 40) + 'px) rotate(' + (Math.random() * 720) + 'deg)', opacity: .8 }
-        ], { duration: 2200 + Math.random() * 1800, delay: Math.random() * 600, easing: 'cubic-bezier(.25,.6,.4,1)', fill: 'forwards' });
-    }
-})();
-</script>
-    <?php endif;
-    public_foot();
+<?php
+$open = campaign_state($settings) === 'active';
+if ($result['ok']) {
+    if ($open) echo scan_next_hint();
+    public_actions([['Semak penyertaan saya', 'check.php', 'search']]);
+} else {
+    public_actions(array_filter([
+        !empty($result['code']) ? ['Cuba lagi', 'lucky.php?pid=' . urlencode($result['code']), 'back', true] : null,
+        ['Semak penyertaan saya', 'check.php', 'search'],
+    ]));
+}
+?>
+    <?php
+    if ($result['ok']) confetti_script();
+    public_page_end();
     exit;
 }
 
@@ -94,6 +66,10 @@ $fail = function ($msg) use ($purchase_id) { finish(['ok' => false, 'error' => $
 if ($purchase_id === '' || $customer_name === '' || trim($_POST['customer_phone'] ?? '') === '') {
     $fail('Sila isi semua maklumat.');
 }
+// PDPA: registration needs the customer's consent (checkbox on the form, see privacy.php)
+if (empty($_POST['consent'])) {
+    $fail('Sila tandakan kotak persetujuan Notis Privasi untuk menyertai.');
+}
 if (mb_strlen($customer_name) < 2 || mb_strlen($customer_name) > 100) {
     $fail('Sila masukkan nama penuh yang sah.');
 }
@@ -103,13 +79,13 @@ if ($customer_phone === null) {
 
 $state = campaign_state($settings);
 if ($state !== 'active') {
-    $fail($state === 'upcoming' ? 'Cabutan bertuah belum bermula.' : 'Maaf, tempoh penyertaan telah tamat.');
+    $fail($state === 'upcoming' ? 'Penyertaan belum dibuka.' : 'Tempoh penyertaan telah tamat.');
 }
 
 $stmt = $pdo->prepare("SELECT code FROM product_codes WHERE code = ?");
 $stmt->execute([$purchase_id]);
 if (!$stmt->fetch()) {
-    $fail('Kod produk ini tidak sah.');
+    $fail('Kod produk tidak sah. Sila imbas QR code asal pada produk anda.');
 }
 
 try {
@@ -147,18 +123,10 @@ try {
     if ($pdo->inTransaction()) $pdo->rollBack();
     if ($e->getCode() === '23000') {
         // Unique key clash: the product code was registered at the same moment
-        $fail('Produk ini telah didaftarkan untuk cabutan bertuah.');
+        $fail('Kod produk ini sudah didaftarkan. Setiap kod produk hanya boleh didaftarkan sekali.');
     }
     error_log('Registration failed for ' . $purchase_id . ': ' . $e->getMessage());
-    $fail('Pendaftaran tidak berjaya. Sila cuba sebentar lagi.');
-}
-
-// ---------- WhatsApp confirmation ----------
-$waSent = wa_send_template($customer_phone, $wa_template_confirm, [$customer_name, $customer_id, $purchase_id]);
-$waLink = null;
-if (!$waSent && $wa_business_number !== '') {
-    $waLink = wa_link($wa_business_number,
-        "Saya telah menyertai {$settings['campaign_title']}.\nNama: $customer_name\nID Pelanggan: $customer_id\nKod produk: $purchase_id");
+    $fail('Sila cuba sebentar lagi.');
 }
 
 finish([
@@ -168,6 +136,4 @@ finish([
     'code' => $purchase_id,
     'total' => $total,
     'name_changed' => $nameChanged,
-    'wa_sent' => $waSent,
-    'wa_link' => $waLink,
 ]);

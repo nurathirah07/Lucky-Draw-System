@@ -36,7 +36,7 @@ try {
     foreach ($entries as $entry) {
         $formattedEntries[] = [
             'purchase_id' => $entry['purchase_id'],
-            'entry_date' => date('d/m/Y H:i:s', strtotime($entry['entry_date'])),
+            'entry_date' => format_datetime($entry['entry_date']),
             'ip_address' => $entry['ip_address']
         ];
     }

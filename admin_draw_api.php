@@ -23,7 +23,6 @@ $action = $input['action'] ?? '';
 $settings = get_settings($pdo);
 
 function winner_payload($w, $settings) {
-    global $wa_template_winner;
     return [
         'id' => (int)$w['id'],
         'customer_id' => $w['customer_id'],
@@ -32,9 +31,7 @@ function winner_payload($w, $settings) {
         'purchase_id' => $w['purchase_id'],
         'prize' => $w['prize'],
         'drawn_at' => format_datetime($w['drawn_at']),
-        'wa_link' => wa_link($w['customer_phone'], winner_message($w, $settings)),
-        'wa_auto' => wa_enabled($wa_template_winner),
-    ];
+        'wa_link' => wa_link($w['customer_phone'], winner_message($w, $settings)),    ];
 }
 
 switch ($action) {
@@ -64,14 +61,6 @@ switch ($action) {
     case 'delete':
         $pdo->prepare("DELETE FROM winners WHERE id = ?")->execute([(int)($input['id'] ?? 0)]);
         respond(['success' => true]);
-
-    case 'notify':
-        $stmt = $pdo->prepare("SELECT * FROM winners WHERE id = ?");
-        $stmt->execute([(int)($input['id'] ?? 0)]);
-        $w = $stmt->fetch();
-        if (!$w) respond(['success' => false, 'message' => 'Winner not found.']);
-        $sent = wa_send_template($w['customer_phone'], $wa_template_winner, [$w['customer_name'], $w['prize'] ?: 'hadiah', $w['purchase_id']]);
-        respond(['success' => $sent, 'message' => $sent ? 'WhatsApp message sent.' : 'Sending failed - check logs/error.log.']);
 
     default:
         respond(['success' => false, 'message' => 'Unknown action.'], 400);

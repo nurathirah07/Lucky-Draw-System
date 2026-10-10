@@ -33,7 +33,7 @@ function validateAdminCredentials($username, $password, $pdo) {
     ];
 
     if (empty($username) || empty($password)) {
-        $result['message'] = 'Username and password are required!';
+        $result['message'] = 'Enter your username and password.';
         return $result;
     }
 
@@ -50,7 +50,7 @@ function validateAdminCredentials($username, $password, $pdo) {
                 'email' => $user['email']
             ];
         } else {
-            $result['message'] = 'Invalid username or password!';
+            $result['message'] = 'Incorrect username or password.';
         }
     } catch (Exception $e) {
         $result['message'] = 'Authentication error. Please try again.';
@@ -97,5 +97,16 @@ function logoutAdmin() {
         );
     }
     session_destroy();
+}
+
+/**
+ * Can a new admin account be created on admin_register.php?
+ * Only for the first account (empty system), or while $allow_admin_register is
+ * switched on in config.php to add another admin.
+ */
+function adminRegistrationOpen($pdo) {
+    global $allow_admin_register;
+    if (!empty($allow_admin_register)) return true;
+    return (int)$pdo->query("SELECT COUNT(*) FROM admin_users")->fetchColumn() === 0;
 }
 ?>

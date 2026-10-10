@@ -1,5 +1,5 @@
 <?php
-// admin_lucky.php - Admin login + dashboard
+// admin_lucky.php - Admin sign-in + Overview
 session_start();
 require_once 'config.php';
 require_once 'admin_auth.php';
@@ -24,14 +24,12 @@ if (isset($_GET['logout'])) {
     exit;
 }
 
-// ---------- Login page ----------
+// ---------- Sign-in page ----------
 if (!isAdminLoggedIn()) {
-    public_head('Admin login');
+    public_page_start('Sign in', 'Admin sign in', 'en');
     ?>
-<div class="wrap auth-card">
-    <?php brand_block('Admin Panel'); ?>
     <div class="card">
-        <?php if ($login_error): ?><div class="alert alert-error"><?php echo e($login_error); ?></div><?php endif; ?>
+        <?php if ($login_error): ?><div style="margin-bottom:16px"><?php echo alert_box('error', e($login_error)); ?></div><?php endif; ?>
         <form method="POST">
             <div class="field">
                 <label for="u">Username</label>
@@ -41,30 +39,31 @@ if (!isAdminLoggedIn()) {
                 <label for="p">Password</label>
                 <input type="password" id="p" name="password" required autocomplete="current-password">
             </div>
-            <button class="btn btn-primary btn-block" type="submit">Log in</button>
+            <div class="form-actions"><button class="btn btn-primary btn-block" type="submit">Sign in</button></div>
         </form>
-        <p class="text-center muted mt-2" style="font-size:14px">No account? <a href="admin_register.php">Register as admin</a></p>
     </div>
-</div>
+    <?php if (adminRegistrationOpen($pdo)): ?>
+        <p class="small muted" style="text-align:center">No account yet? <a class="link" href="admin_register.php">Create an admin account</a></p>
+    <?php endif; ?>
     <?php
-    public_foot();
+    public_page_end(['Customer page' => 'index.php']);
     exit;
 }
 
-// ---------- Dashboard data ----------
+// ---------- Overview ----------
 $settings = get_settings($pdo);
 $state = campaign_state($settings);
 
-$totalEntries   = (int)$pdo->query("SELECT COUNT(*) FROM lucky_draw_entries")->fetchColumn();
-$totalCustomers = (int)$pdo->query("SELECT COUNT(*) FROM lucky_customers")->fetchColumn();
-$totalCodes     = (int)$pdo->query("SELECT COUNT(*) FROM product_codes")->fetchColumn();
-$scannedCodes   = (int)$pdo->query("SELECT COUNT(DISTINCT s.purchase_id) FROM qr_scan_log s JOIN product_codes p ON p.code = s.purchase_id")->fetchColumn();
-$totalScans     = (int)$pdo->query("SELECT COUNT(*) FROM qr_scan_log s JOIN product_codes p ON p.code = s.purchase_id")->fetchColumn();
-$totalWinners   = (int)$pdo->query("SELECT COUNT(*) FROM winners")->fetchColumn();
-$todayEntries   = (int)$pdo->query("SELECT COUNT(*) FROM lucky_draw_entries WHERE entry_date >= CURDATE()")->fetchColumn();
-
-$pct = function ($a, $b) { return $b > 0 ? round($a / $b * 100, 1) : 0; };
-$scanToReg = $pct($totalEntries, $scannedCodes);
+$num = function ($sql) use ($pdo) { return (int)$pdo->query($sql)->fetchColumn(); };
+$totalEntries   = $num("SELECT COUNT(*) FROM lucky_draw_entries");
+$todayEntries   = $num("SELECT COUNT(*) FROM lucky_draw_entries WHERE entry_date >= CURDATE()");
+$totalCustomers = $num("SELECT COUNT(*) FROM lucky_customers");
+$totalCodes     = $num("SELECT COUNT(*) FROM product_codes");
+$registeredCodes = $num("SELECT COUNT(*) FROM lucky_draw_entries e JOIN product_codes p ON p.code = e.purchase_id");  // excludes entries whose batch was deleted
+$newCodes       = $num("SELECT COUNT(*) FROM product_codes WHERE batch_name <> 'Legacy'");
+$scannedCodes   = $num("SELECT COUNT(DISTINCT s.purchase_id) FROM qr_scan_log s JOIN product_codes p ON p.code = s.purchase_id");
+$totalWinners   = $num("SELECT COUNT(*) FROM winners");
+$pct = function ($a, $b) { return $b > 0 ? round($a / $b * 100) : 0; };
 
 // Entries per day - last 14 days
 $days = 14;
@@ -74,169 +73,110 @@ $stmt = $pdo->prepare("SELECT DATE(entry_date) d, COUNT(*) c FROM lucky_draw_ent
 $stmt->execute([array_key_first($perDay)]);
 foreach ($stmt as $row) $perDay[$row['d']] = (int)$row['c'];
 
+// Use the customer record's name so it matches the Customers page
+$recent = $pdo->query("SELECT c.customer_name, e.customer_id, e.purchase_id, e.entry_date FROM lucky_draw_entries e JOIN lucky_customers c ON c.customer_id = e.customer_id ORDER BY e.entry_date DESC, e.id DESC LIMIT 6")->fetchAll();
+
+// Getting-started checklist (hidden once the first three steps are done)
+$steps = [
+    ['Set campaign dates', 'Start, end and prizes', 'admin_settings.php', $settings['campaign_start'] !== '' || $settings['campaign_end'] !== ''],
+    ['Create QR codes', 'Generate and print a batch', 'generate_qr.php', $newCodes > 0],
+    ['Test with a phone', 'Scan one of your codes', 'generate_qr.php?tab=test', $scannedCodes > 0],
+    ['Run the lucky draw', 'Spin the wheel when it ends', 'admin_draw.php', $totalWinners > 0],
+];
+$showChecklist = !($steps[0][3] && $steps[1][3] && $steps[2][3]);
+
 function bar_chart_svg(array $data) {
-    $w = 640; $h = 220; $padL = 8; $padB = 26; $padT = 22;
+    $w = 640; $h = 200; $padB = 24; $padT = 18;
     $max = max(1, max($data));
-    $n = count($data);
-    $slot = ($w - $padL * 2) / $n;
-    $barW = $slot * 0.62;
+    $slot = $w / count($data);
+    $barW = $slot * 0.56;
     $out = '<svg viewBox="0 0 ' . $w . ' ' . $h . '" role="img" aria-label="Entries per day">';
-    $out .= '<defs><linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fb7185"/><stop offset="1" stop-color="#e11d48"/></linearGradient></defs>';
-    for ($g = 0; $g <= 3; $g++) {
-        $y = $padT + ($h - $padT - $padB) * $g / 3;
-        $out .= '<line class="grid-line" x1="0" x2="' . $w . '" y1="' . $y . '" y2="' . $y . '"/>';
-    }
     $i = 0;
     foreach ($data as $date => $value) {
         $bh = ($h - $padT - $padB) * $value / $max;
-        $x = $padL + $slot * $i + ($slot - $barW) / 2;
-        $y = $h - $padB - $bh;
-        $label = date('j/n', strtotime($date));
-        $out .= '<rect class="bar" x="' . round($x, 1) . '" y="' . round($y, 1) . '" width="' . round($barW, 1) . '" height="' . round(max($bh, $value ? 2 : 0), 1) . '" rx="5"><title>' . $label . ': ' . $value . ' entries</title></rect>';
+        $x = round($slot * $i + ($slot - $barW) / 2, 1);
+        $y = round($h - $padB - max($bh, 3), 1);
+        $label = date('j M', strtotime($date));
+        $out .= '<rect class="' . ($value ? 'col' : 'col-empty') . '" x="' . $x . '" y="' . $y . '" width="' . round($barW, 1) . '" height="' . round(max($bh, 3), 1) . '" rx="3"><title>' . $label . ': ' . $value . ' entries</title></rect>';
         if ($value) $out .= '<text class="val" x="' . round($x + $barW / 2, 1) . '" y="' . round($y - 6, 1) . '" text-anchor="middle">' . $value . '</text>';
-        $out .= '<text x="' . round($x + $barW / 2, 1) . '" y="' . ($h - 8) . '" text-anchor="middle">' . $label . '</text>';
+        if ($i % 2 === 1 || count($data) <= 7) $out .= '<text x="' . round($x + $barW / 2, 1) . '" y="' . ($h - 6) . '" text-anchor="middle">' . $label . '</text>';
         $i++;
     }
     return $out . '</svg>';
 }
 
-// Customers table
-$search = trim($_GET['search'] ?? '');
-$page = max(1, (int)($_GET['page'] ?? 1));
-$limit = 20;
-$where = '';
-$params = [];
-if ($search !== '') {
-    $where = "WHERE customer_id LIKE ? OR customer_name LIKE ? OR customer_phone LIKE ?";
-    // Phone numbers are stored as 60XXXXXXXXX, so match "012 345..." by its digits without the leading 0
-    $isPhone = preg_match('/^[\d\s+\-()]+$/', $search);
-    $phoneSearch = $isPhone ? '%' . ltrim(preg_replace('/\D+/', '', $search), '0') . '%' : "%$search%";
-    $params = ["%$search%", "%$search%", $phoneSearch];
-}
-$stmt = $pdo->prepare("SELECT COUNT(*) FROM lucky_customers $where");
-$stmt->execute($params);
-$totalPages = max(1, (int)ceil($stmt->fetchColumn() / $limit));
-$page = min($page, $totalPages);
-$stmt = $pdo->prepare("SELECT * FROM lucky_customers $where ORDER BY total_entries DESC, first_entry_date ASC LIMIT $limit OFFSET " . (($page - 1) * $limit));
-$stmt->execute($params);
-$customers = $stmt->fetchAll();
+$dates = 'No dates set';
+if ($settings['campaign_start'] && $settings['campaign_end']) $dates = format_datetime($settings['campaign_start']) . ' – ' . format_datetime($settings['campaign_end']);
+elseif ($settings['campaign_start']) $dates = 'From ' . format_datetime($settings['campaign_start']);
+elseif ($settings['campaign_end']) $dates = 'Until ' . format_datetime($settings['campaign_end']);
 
-$stateBadge = ['upcoming' => ['badge-blue', 'Not started'], 'active' => ['badge-green', 'Open'], 'ended' => ['badge-red', 'Ended']][$state];
-
-admin_header('Dashboard', 'dashboard');
+admin_header('overview');
+page_head(
+    'Overview',
+    e($settings['campaign_title']) . ' · ' . e($dates),
+    campaign_badge($state) . '<a class="btn" href="admin_lucky_export.php">' . icon('download') . 'Export CSV</a>'
+);
 ?>
-<div class="page-head">
-    <div>
-        <h1><?php echo e($settings['campaign_title']); ?></h1>
-        <p>
-            <?php if ($settings['campaign_start'] && $settings['campaign_end']): ?>
-                <?php echo e(format_datetime($settings['campaign_start'])); ?> → <?php echo e(format_datetime($settings['campaign_end'])); ?>
-            <?php elseif ($settings['campaign_start']): ?>
-                From <?php echo e(format_datetime($settings['campaign_start'])); ?> · no end date
-            <?php elseif ($settings['campaign_end']): ?>
-                Until <?php echo e(format_datetime($settings['campaign_end'])); ?>
-            <?php else: ?>
-                No campaign dates set - <a href="admin_settings.php">set them</a>
-            <?php endif; ?>
-        </p>
+
+<?php if ($showChecklist): ?>
+<div class="card">
+    <div class="card-head"><div><div class="card-title">Getting started</div><div class="card-sub">Follow these steps to run a campaign.</div></div></div>
+    <div class="checklist">
+        <?php foreach ($steps as $n => [$title, $desc, $href, $done]): ?>
+            <a href="<?php echo e($href); ?>" class="<?php echo $done ? 'done' : ''; ?>">
+                <span class="step-dot"><?php echo $done ? icon('check') : $n + 1; ?></span>
+                <span><b><?php echo e($title); ?></b><span><?php echo e($desc); ?></span></span>
+            </a>
+        <?php endforeach; ?>
     </div>
-    <span class="badge <?php echo $stateBadge[0]; ?>"><span class="dot"></span> <?php echo $stateBadge[1]; ?></span>
 </div>
+<?php endif; ?>
 
 <div class="stats">
-    <div class="stat"><div class="stat-label">🎟️ Total entries</div><div class="stat-value"><?php echo number_format($totalEntries); ?></div><div class="stat-sub">+<?php echo $todayEntries; ?> today</div></div>
-    <div class="stat"><div class="stat-label">👥 Customers</div><div class="stat-value"><?php echo number_format($totalCustomers); ?></div><div class="stat-sub"><?php echo $totalCustomers ? number_format($totalEntries / $totalCustomers, 1) : 0; ?> entries each</div></div>
-    <div class="stat"><div class="stat-label">🏷️ QR codes issued</div><div class="stat-value"><?php echo number_format($totalCodes); ?></div><div class="stat-sub"><?php echo $pct($totalEntries, $totalCodes); ?>% registered</div></div>
-    <div class="stat"><div class="stat-label">🏆 Winners drawn</div><div class="stat-value"><?php echo number_format($totalWinners); ?></div><div class="stat-sub"><a href="admin_draw.php">Open spin wheel →</a></div></div>
+    <div class="stat"><div class="stat-label">Entries</div><div class="stat-value"><?php echo number_format($totalEntries); ?></div><div class="stat-note"><?php echo $todayEntries; ?> today</div></div>
+    <div class="stat"><div class="stat-label">Customers</div><div class="stat-value"><?php echo number_format($totalCustomers); ?></div><div class="stat-note"><?php echo $totalCustomers ? number_format($totalEntries / $totalCustomers, 1) : 0; ?> entries per customer</div></div>
+    <div class="stat"><div class="stat-label">QR codes used</div><div class="stat-value"><?php echo $pct($registeredCodes, $totalCodes); ?>%</div><div class="stat-note"><?php echo number_format($registeredCodes); ?> of <?php echo number_format($totalCodes); ?> codes</div></div>
+    <div class="stat"><div class="stat-label">Winners</div><div class="stat-value"><?php echo number_format($totalWinners); ?></div><div class="stat-note"><a class="link" href="admin_draw.php">Go to lucky draw</a></div></div>
 </div>
 
-<div class="grid-2">
-    <div class="panel chart">
-        <div class="panel-head"><div><h2>Entries per day</h2><p>Last <?php echo $days; ?> days</p></div></div>
+<div class="grid grid-main">
+    <div class="card chart">
+        <div class="card-head"><div><div class="card-title">Entries per day</div><div class="card-sub">Last <?php echo $days; ?> days</div></div></div>
         <?php echo bar_chart_svg($perDay); ?>
     </div>
-    <div class="panel">
-        <div class="panel-head"><div><h2>Scan → registration</h2><p>Of the codes scanned, how many registered</p></div></div>
-        <div class="big-rate"><?php echo $scanToReg; ?>%</div>
-        <div class="funnel mt-2">
-            <div class="funnel-row"><div class="top"><span>Codes issued</span><b><?php echo number_format($totalCodes); ?></b></div><div class="track"><div style="width:100%"></div></div></div>
-            <div class="funnel-row"><div class="top"><span>Codes scanned</span><b><?php echo number_format($scannedCodes); ?></b></div><div class="track gold"><div style="width:<?php echo $pct($scannedCodes, $totalCodes); ?>%"></div></div></div>
-            <div class="funnel-row"><div class="top"><span>Registered</span><b><?php echo number_format($totalEntries); ?></b></div><div class="track green"><div style="width:<?php echo $pct($totalEntries, $totalCodes); ?>%"></div></div></div>
+    <div class="card">
+        <div class="card-head"><div><div class="card-title">QR codes used</div><div class="card-sub">How many of your codes customers have registered</div></div></div>
+        <div class="meter-top"><span class="muted">Used</span><b><?php echo $pct($registeredCodes, $totalCodes); ?>%</b></div>
+        <div class="bar"><i style="width:<?php echo $pct($registeredCodes, $totalCodes); ?>%"></i></div>
+        <div class="kv" style="margin-top:16px">
+            <div class="kv-row"><span>Codes created</span><b><?php echo number_format($totalCodes); ?></b></div>
+            <div class="kv-row"><span>Registered by customers</span><b><?php echo number_format($registeredCodes); ?></b></div>
+            <div class="kv-row"><span>Not used yet</span><b><?php echo number_format(max(0, $totalCodes - $registeredCodes)); ?></b></div>
         </div>
-        <p class="faint mt-2" style="font-size:12px"><?php echo number_format($totalScans); ?> total scans (including repeat scans)</p>
+        <div class="form-actions"><a class="btn btn-sm" href="generate_qr.php"><?php echo icon('qr'); ?>Manage QR codes</a></div>
     </div>
 </div>
 
-<div class="panel">
-    <div class="panel-head">
-        <div><h2>Customers</h2><p>Click a row to see the products they registered</p></div>
-        <form method="GET" class="toolbar" style="flex:1;max-width:420px">
-            <div class="search"><input type="search" name="search" placeholder="Search ID, name or phone" value="<?php echo e($search); ?>" autocomplete="off"></div>
-        </form>
-    </div>
-    <div class="table-wrap">
-        <table class="table">
-            <thead><tr><th>Customer</th><th>Phone</th><th>Entries</th><th>First entry</th><th>Last entry</th><th></th></tr></thead>
-            <tbody>
-            <?php if (!$customers): ?>
-                <tr><td colspan="6"><div class="empty"><?php echo $search ? 'No customers match your search.' : 'No entries yet. Share your QR codes to get started!'; ?></div></td></tr>
-            <?php endif; ?>
-            <?php foreach ($customers as $c): ?>
-                <tr class="row-click" data-customer="<?php echo e($c['customer_id']); ?>">
-                    <td><span class="chev">›</span><strong><?php echo e($c['customer_name']); ?></strong><br><span class="faint mono" style="font-size:12px;margin-left:18px;white-space:nowrap"><?php echo e($c['customer_id']); ?></span></td>
-                    <td class="mono" style="white-space:nowrap"><?php echo e(format_phone($c['customer_phone'])); ?></td>
-                    <td><span class="badge badge-red"><?php echo (int)$c['total_entries']; ?></span></td>
-                    <td class="muted" style="white-space:nowrap"><?php echo e(format_datetime($c['first_entry_date'], 'd/m/Y H:i')); ?></td>
-                    <td class="muted" style="white-space:nowrap"><?php echo e(format_datetime($c['last_entry_date'], 'd/m/Y H:i')); ?></td>
-                    <td><a class="btn btn-wa btn-sm" target="_blank" rel="noopener" href="<?php echo e(wa_link($c['customer_phone'], 'Salam ' . $c['customer_name'] . ', ')); ?>">WhatsApp</a></td>
-                </tr>
-                <tr class="detail-row" data-detail="<?php echo e($c['customer_id']); ?>"><td colspan="6"><div class="entries muted">Loading…</div></td></tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
-    </div>
-    <?php if ($totalPages > 1): ?>
-        <div class="pagination">
-            <?php for ($i = 1; $i <= $totalPages; $i++): ?>
-                <?php if ($i === $page): ?><span class="active"><?php echo $i; ?></span>
-                <?php else: ?><a href="?page=<?php echo $i; ?>&search=<?php echo urlencode($search); ?>"><?php echo $i; ?></a><?php endif; ?>
-            <?php endfor; ?>
+<div class="card card-flush">
+    <div class="card-head"><div><div class="card-title">Latest entries</div></div></div>
+    <?php if (!$recent): ?>
+        <div class="empty"><?php echo icon('ticket'); ?><p>No entries yet.</p><p class="small faint">Entries appear here when customers scan a code and register.</p></div>
+    <?php else: ?>
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Customer</th><th>Product code</th><th>Registered</th></tr></thead>
+                <tbody>
+                <?php foreach ($recent as $r): ?>
+                    <tr>
+                        <td><?php echo e($r['customer_name']); ?><div class="sub-line mono"><?php echo e($r['customer_id']); ?></div></td>
+                        <td class="mono"><?php echo e($r['purchase_id']); ?></td>
+                        <td class="muted nowrap"><?php echo e(format_datetime($r['entry_date'])); ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
         </div>
     <?php endif; ?>
+    <div class="card-foot"><span class="small faint"><?php echo number_format($totalCustomers) . ($totalCustomers === 1 ? ' customer' : ' customers'); ?> in total</span><a class="btn btn-sm" href="admin_customers.php">View all customers<?php echo icon('arrow'); ?></a></div>
 </div>
-
-<script>
-function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
-
-document.querySelectorAll('.row-click').forEach(function (row) {
-    row.addEventListener('click', function (e) {
-        if (e.target.closest('a')) return;
-        var id = row.dataset.customer;
-        var detail = document.querySelector('.detail-row[data-detail="' + CSS.escape(id) + '"]');
-        var open = detail.classList.toggle('show');
-        row.classList.toggle('open', open);
-        if (!open || detail.dataset.loaded) return;
-        detail.dataset.loaded = 1;
-        var box = detail.querySelector('.entries');
-        fetch('admin_get_customer_entries.php?customer_id=' + encodeURIComponent(id))
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (!data.success || !data.entries.length) { box.textContent = 'No products found.'; return; }
-                box.classList.remove('muted');
-                box.innerHTML = data.entries.map(function (en, i) {
-                    return '<div class="entry"><b class="mono">' + (i + 1) + '. ' + esc(en.purchase_id) + '</b><span>' + esc(en.entry_date) + ' · IP ' + esc(en.ip_address || '-') + '</span></div>';
-                }).join('');
-            })
-            .catch(function () { box.textContent = 'Could not load products.'; });
-    });
-});
-
-var searchInput = document.querySelector('.search input');
-var searchTimer;
-searchInput.addEventListener('input', function () {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(function () { searchInput.form.submit(); }, 500);
-});
-if (searchInput.value) { searchInput.focus(); searchInput.setSelectionRange(searchInput.value.length, searchInput.value.length); }
-</script>
 <?php admin_footer(); ?>

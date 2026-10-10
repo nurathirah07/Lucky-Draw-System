@@ -26,88 +26,108 @@ $winners = $pdo->query("SELECT * FROM winners ORDER BY drawn_at DESC, id DESC")-
 $awarded = array_column($winners, 'prize');
 $nextPrize = '';
 foreach ($prizes as $prize) { if (!in_array($prize, $awarded, true)) { $nextPrize = $prize; break; } }
+$waButtons = $settings['wa_buttons'] === '1';
 
-admin_header('Spin & Winners', 'draw');
+admin_header('draw');
+page_head(
+    'Lucky draw',
+    'Each registered product code is one entry. The winner is picked securely on the server.',
+    '<button class="btn" id="fullscreenBtn">' . icon('expand') . 'Full screen</button>'
+);
 ?>
-<div class="page-head">
-    <div>
-        <h1>Spin the wheel</h1>
-        <p>Each registered product is one ticket. The winner is picked securely on the server.</p>
-    </div>
-    <button class="btn btn-ghost no-print" id="fullscreenBtn">⛶ Full screen</button>
-</div>
-
-<div class="wheel-stage" id="stage">
-    <div class="panel">
-        <div class="wheel-box">
+<div id="stage">
+<div class="draw">
+    <div class="card">
+        <div class="wheel-wrap">
             <div class="wheel-pointer"></div>
             <canvas id="wheel" width="1040" height="1040"></canvas>
-            <div class="wheel-hub">SPIN</div>
-        </div>
-        <div class="text-center mt-3">
-            <button class="btn btn-gold" id="spinBtn" style="font-size:18px;padding:16px 44px">🎡 Spin!</button>
-            <p class="muted mt-1" style="font-size:13px" id="poolInfo"></p>
+            <button class="wheel-hub" id="hubBtn" aria-label="Spin"><?php echo icon('spin'); ?></button>
         </div>
     </div>
 
-    <div>
-        <div class="panel">
-            <div class="panel-head"><h2>Draw settings</h2></div>
+    <div class="stack">
+        <div class="card">
+            <div class="card-head"><div class="card-title">Draw</div></div>
             <div class="field">
                 <label for="prizeSelect">Prize</label>
                 <select id="prizeSelect">
                     <?php foreach ($prizes as $prize): ?>
-                        <option value="<?php echo e($prize); ?>"<?php echo $prize === $nextPrize ? ' selected' : ''; ?>><?php echo e($prize); ?><?php echo in_array($prize, $awarded, true) ? ' (awarded)' : ''; ?></option>
+                        <option value="<?php echo e($prize); ?>"<?php echo $prize === $nextPrize ? ' selected' : ''; ?>><?php echo e($prize); ?><?php echo in_array($prize, $awarded, true) ? ' (already drawn)' : ''; ?></option>
                     <?php endforeach; ?>
                     <option value="__custom"<?php echo $prizes ? '' : ' selected'; ?>>Other prize…</option>
                 </select>
+                <?php if (!$prizes): ?><div class="hint">Add your prize list in <a class="link" href="admin_settings.php">Settings</a>.</div><?php endif; ?>
             </div>
             <div class="field<?php echo $prizes ? ' hidden' : ''; ?>" id="customPrizeField">
-                <input type="text" id="customPrize" maxlength="150" placeholder="e.g. Baucar RM50">
+                <input type="text" id="customPrize" maxlength="150" placeholder="Prize name, e.g. Baucar RM50">
             </div>
-            <label class="check"><input type="checkbox" id="excludeWinners" checked> Exclude customers who have already won</label>
-            <?php if (!$prizes): ?><p class="faint mt-2" style="font-size:13px">Tip: add your prize list in <a href="admin_settings.php">Campaign settings</a>.</p><?php endif; ?>
+            <div class="field">
+                <label class="check"><input type="checkbox" id="excludeWinners" checked> Skip customers who already won</label>
+            </div>
+            <hr class="divider">
+            <div class="kv">
+                <div class="kv-row"><span>Customers in the draw</span><b id="poolCustomers">0</b></div>
+                <div class="kv-row"><span>Entries in the draw</span><b id="poolEntries">0</b></div>
+            </div>
+            <div class="form-actions"><button class="btn btn-primary btn-lg btn-block" id="spinBtn"><?php echo icon('spin'); ?>Spin the wheel</button></div>
         </div>
 
-        <div class="panel">
-            <div class="panel-head"><div><h2>Winners</h2><p><?php echo count($winners); ?> drawn</p></div></div>
-            <div class="list" id="winnersList">
-                <?php if (!$winners): ?><div class="empty" id="noWinners">No winners yet.</div><?php endif; ?>
-                <?php foreach ($winners as $w): ?>
-                    <div class="list-item" data-id="<?php echo (int)$w['id']; ?>" style="flex-wrap:wrap">
-                        <div style="min-width:0">
-                            <strong><?php echo e($w['customer_name']); ?></strong> <span class="badge badge-gold"><?php echo e($w['prize'] ?: 'Prize'); ?></span>
-                            <div class="faint" style="font-size:12px"><span class="mono"><?php echo e($w['purchase_id']); ?></span> · <?php echo e(format_phone($w['customer_phone'])); ?> · <?php echo e(format_datetime($w['drawn_at'])); ?></div>
-                        </div>
-                        <div class="btn-row">
-                            <a class="btn btn-wa btn-sm" target="_blank" rel="noopener" href="<?php echo e(wa_link($w['customer_phone'], winner_message($w, $settings))); ?>">💬 Notify</a>
-                            <?php if (wa_enabled($wa_template_winner)): ?><button class="btn btn-ghost btn-sm" data-notify="<?php echo (int)$w['id']; ?>">Auto-send</button><?php endif; ?>
-                            <button class="btn btn-danger btn-sm" data-delete="<?php echo (int)$w['id']; ?>">Remove</button>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
+        <div class="card card-flush">
+            <div class="card-head"><div><div class="card-title">Winners</div><div class="card-sub"><?php echo count($winners); ?> drawn · removing a winner puts the entry back in the draw</div></div></div>
+            <?php if (!$winners): ?>
+                <div class="empty"><?php echo icon('trophy'); ?><p>No winners yet.</p></div>
+            <?php else: ?>
+            <div class="table-wrap">
+                <table class="table" id="winnersTable">
+                    <tbody>
+                    <?php foreach ($winners as $w): ?>
+                        <tr>
+                            <td>
+                                <?php echo e($w['customer_name']); ?> <span class="badge badge-warning plain"><?php echo e($w['prize'] ?: 'Prize'); ?></span>
+                                <div class="sub-line"><span class="mono"><?php echo e($w['purchase_id']); ?></span> · <?php echo e(format_phone($w['customer_phone'])); ?> · <?php echo e(format_datetime($w['drawn_at'])); ?></div>
+                            </td>
+                            <td class="num nowrap">
+                                <?php if ($waButtons): ?><a class="btn btn-sm" target="_blank" rel="noopener" title="Notify on WhatsApp" href="<?php echo e(wa_link($w['customer_phone'], winner_message($w, $settings))); ?>"><?php echo icon('chat', 'icon-wa'); ?></a><?php endif; ?>                                <button class="btn btn-sm btn-danger" data-delete="<?php echo (int)$w['id']; ?>" title="Remove winner"><?php echo icon('trash'); ?></button>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
             </div>
+            <?php endif; ?>
         </div>
     </div>
 </div>
 
 <div class="modal" id="winModal">
     <div class="modal-card">
-        <h2>🏆 We have a winner!</h2>
-        <div class="winner-name" id="wName"></div>
-        <div class="muted mono" id="wMeta"></div>
-        <div class="big-id"><small>Prize</small><strong id="wPrize" style="font-size:20px"></strong></div>
+        <div class="eyebrow" id="wPrize"></div>
+        <h2 id="wName"></h2>
+        <p class="muted">is the winner</p>
+        <div class="kv">
+            <div class="kv-row"><span>Customer ID</span><b class="mono" id="wId"></b></div>
+            <div class="kv-row"><span>Product code</span><b class="mono" id="wCode"></b></div>
+            <div class="kv-row"><span>Phone</span><b class="mono" id="wPhone"></b></div>
+        </div>
         <div class="btn-row" style="justify-content:center">
-            <a class="btn btn-wa" id="wWa" target="_blank" rel="noopener">💬 Notify via WhatsApp</a>
-            <button class="btn btn-ghost" id="wClose">Close</button>
+            <?php if ($waButtons): ?><a class="btn btn-primary" id="wWa" target="_blank" rel="noopener"><?php echo icon('chat'); ?>Notify on WhatsApp</a><?php endif; ?>
+            <button class="btn" id="wClose">Done</button>
         </div>
     </div>
+</div>
 </div>
 
 <script>
 var participants = <?php echo json_encode($participants, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 var MAX_SEGMENTS = 24;
-var COLORS = ['#e11d48', '#18181b', '#fbbf24', '#27272a', '#be123c', '#3f3f46'];
+var REDS = ['#e5484d', '#c43c40'], GREYS = ['#1c1c20', '#2a2a30'];
+
+// Alternate red / grey so neighbouring slices never share a colour
+function sliceColor(i, n) {
+    if (i % 2 === 1) return GREYS[((i - 1) / 2) % 2];
+    if (n > 1 && i === n - 1) return '#33333a';   // odd count: last slice touches the first (red)
+    return REDS[(i / 2) % 2];
+}
 var canvas = document.getElementById('wheel');
 var ctx = canvas.getContext('2d');
 var segments = [];
@@ -115,8 +135,8 @@ var rotation = 0;      // radians, clockwise
 var spinning = false;
 
 function eligible() {
-    var ex = document.getElementById('excludeWinners').checked;
-    return participants.filter(function (p) { return !(ex && p.won); });
+    var skip = document.getElementById('excludeWinners').checked;
+    return participants.filter(function (p) { return !(skip && p.won); });
 }
 
 function shuffle(a) {
@@ -124,7 +144,7 @@ function shuffle(a) {
     return a;
 }
 
-// Build wheel segments. Small draws: slice size = number of entries.
+// Small draws: slice size = number of entries.
 // Big draws: show a sample of names with equal slices (the real odds are applied on the server).
 function buildSegments(list) {
     var shown = list.length > MAX_SEGMENTS ? shuffle(list.slice()).slice(0, MAX_SEGMENTS) : list.slice();
@@ -150,35 +170,29 @@ function draw() {
     ctx.rotate(rotation);
     if (!segments.length) {
         ctx.fillStyle = '#18181b'; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#71717a'; ctx.font = '600 34px sans-serif'; ctx.textAlign = 'center';
-        ctx.fillText('No eligible entries', 0, -r / 2);
+        ctx.fillStyle = '#6b6b74'; ctx.font = '500 32px Inter, sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('No entries to draw', 0, -r / 2);
         ctx.restore(); return;
     }
     segments.forEach(function (s, i) {
         var a0 = s.start - Math.PI / 2, a1 = s.end - Math.PI / 2;
-        var color = COLORS[i % COLORS.length];
-        if (segments.length > 1 && i === segments.length - 1 && color === COLORS[0]) color = COLORS[4];
+        var color = sliceColor(i, segments.length);
         ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, r, a0, a1); ctx.closePath();
         ctx.fillStyle = color; ctx.fill();
-        if (segments.length > 1) { ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 3; ctx.stroke(); }
+        if (segments.length > 1) { ctx.strokeStyle = '#0a0a0b'; ctx.lineWidth = 4; ctx.stroke(); }
 
-        var mid = (a0 + a1) / 2, arc = s.end - s.start;
+        var arc = s.end - s.start, mid = (a0 + a1) / 2;
+        // Keep names upright: flip labels whose slice is on the left half of the wheel
+        var flip = Math.cos(mid + rotation) < 0;
         ctx.save();
-        ctx.rotate(mid);
-        ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-        ctx.fillStyle = color === '#fbbf24' ? '#1c1917' : '#fafafa';
-        var fs = Math.max(16, Math.min(36, arc * r * 0.45));
-        ctx.font = '700 ' + fs + 'px "Plus Jakarta Sans", sans-serif';
+        ctx.rotate(flip ? mid + Math.PI : mid);
+        ctx.textAlign = flip ? 'left' : 'right'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ededef';
+        ctx.font = '600 ' + Math.max(18, Math.min(34, arc * r * 0.42)) + 'px Inter, sans-serif';
         var label = s.name.length > 16 ? s.name.slice(0, 15) + '…' : s.name;
-        if (arc * r > 18) ctx.fillText(label, r - 34, 0);
+        if (arc * r > 20) ctx.fillText(label, flip ? -(r - 40) : r - 40, 0);
         ctx.restore();
     });
-    // rim dots
-    for (var d = 0; d < 36; d++) {
-        var a = d / 36 * Math.PI * 2;
-        ctx.beginPath(); ctx.arc(Math.cos(a) * (r - 12), Math.sin(a) * (r - 12), 5, 0, Math.PI * 2);
-        ctx.fillStyle = d % 2 ? '#fbbf24' : '#fff7ed'; ctx.fill();
-    }
     ctx.restore();
 }
 
@@ -188,25 +202,23 @@ function segmentAtPointer() {
     return -1;
 }
 
-function updatePool() {
+function refresh() {
+    if (spinning) return;
     var list = eligible();
-    var tickets = list.reduce(function (s, p) { return s + p.entries; }, 0);
-    document.getElementById('poolInfo').textContent =
-        list.length + (list.length === 1 ? ' customer · ' : ' customers · ') + tickets + (tickets === 1 ? ' ticket' : ' tickets') +
-        (list.length > MAX_SEGMENTS ? ' · wheel shows ' + MAX_SEGMENTS + ' random names' : '');
+    buildSegments(list);
+    document.getElementById('poolCustomers').textContent = list.length;
+    document.getElementById('poolEntries').textContent = list.reduce(function (s, p) { return s + p.entries; }, 0);
     document.getElementById('spinBtn').disabled = !list.length;
+    draw();
 }
 
-function refresh() { if (spinning) return; buildSegments(eligible()); updatePool(); draw(); }
-
-// Tick sound
 var audio;
 function tick() {
     try {
         audio = audio || new (window.AudioContext || window.webkitAudioContext)();
         var o = audio.createOscillator(), g = audio.createGain();
         o.frequency.value = 1400; o.type = 'square';
-        g.gain.setValueAtTime(0.06, audio.currentTime);
+        g.gain.setValueAtTime(0.05, audio.currentTime);
         g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.04);
         o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.05);
     } catch (e) {}
@@ -231,8 +243,7 @@ function spinTo(winnerId, done) {
 
     function frame(now) {
         var t = Math.min(1, (now - t0) / duration);
-        var eased = 1 - Math.pow(1 - t, 4);
-        rotation = from + delta * eased;
+        rotation = from + delta * (1 - Math.pow(1 - t, 4));
         draw();
         var seg = segmentAtPointer();
         if (seg !== last) { tick(); last = seg; }
@@ -242,13 +253,13 @@ function spinTo(winnerId, done) {
 }
 
 function confetti() {
-    var colors = ['#e11d48', '#fbbf24', '#fb7185', '#22c55e', '#60a5fa', '#fff'];
-    for (var i = 0; i < 160; i++) {
+    var colors = ['#e5484d', '#ededef', '#f5a524', '#3dd68c', '#52a9ff'];
+    for (var i = 0; i < 140; i++) {
         var c = document.createElement('div');
         c.className = 'confetti';
         c.style.left = Math.random() * 100 + 'vw';
         c.style.background = colors[i % colors.length];
-        document.body.appendChild(c);
+        (document.fullscreenElement || document.body).appendChild(c);
         c.animate([
             { transform: 'translateY(0) rotate(0)', opacity: 1 },
             { transform: 'translateY(' + (innerHeight + 40) + 'px) rotate(' + (Math.random() * 900) + 'deg)', opacity: .9 }
@@ -262,49 +273,47 @@ function api(body) {
         .then(function (r) { return r.json(); });
 }
 
-document.getElementById('spinBtn').addEventListener('click', function () {
-    if (spinning) return;
+function startSpin() {
+    var btn = document.getElementById('spinBtn');
+    if (spinning || btn.disabled) return;
     var sel = document.getElementById('prizeSelect').value;
     var prize = sel === '__custom' ? document.getElementById('customPrize').value.trim() : sel;
-    var btn = this;
     spinning = true; btn.classList.add('loading');
     api({ action: 'draw', prize: prize, exclude_winners: document.getElementById('excludeWinners').checked })
         .then(function (res) {
             if (!res.success) throw new Error(res.message);
-            btn.classList.remove('loading'); btn.disabled = true;
             spinTo(res.winner.customer_id, function () {
                 var w = res.winner;
-                document.getElementById('wName').textContent = w.customer_name;
-                document.getElementById('wMeta').textContent = w.customer_id + ' · ' + w.purchase_id + ' · ' + w.phone;
                 document.getElementById('wPrize').textContent = w.prize || 'Lucky draw prize';
-                document.getElementById('wWa').href = w.wa_link;
+                document.getElementById('wName').textContent = w.customer_name;
+                document.getElementById('wId').textContent = w.customer_id;
+                document.getElementById('wCode').textContent = w.purchase_id;
+                document.getElementById('wPhone').textContent = w.phone;
+                var wa = document.getElementById('wWa');
+                if (wa) wa.href = w.wa_link;
                 document.getElementById('winModal').classList.add('show');
                 confetti();
             });
         })
         .catch(function (err) {
-            alert(err.message || 'Draw failed.');
+            alert(err.message || 'The draw failed. Please try again.');
             spinning = false; btn.classList.remove('loading');
         });
-});
+}
 
+document.getElementById('spinBtn').addEventListener('click', startSpin);
+document.getElementById('hubBtn').addEventListener('click', startSpin);
 document.getElementById('wClose').addEventListener('click', function () { location.reload(); });
-
 document.getElementById('prizeSelect').addEventListener('change', function () {
     document.getElementById('customPrizeField').classList.toggle('hidden', this.value !== '__custom');
 });
 document.getElementById('excludeWinners').addEventListener('change', refresh);
 
-document.getElementById('winnersList').addEventListener('click', function (e) {
-    var del = e.target.closest('[data-delete]'), notify = e.target.closest('[data-notify]');
+var table = document.getElementById('winnersTable');
+if (table) table.addEventListener('click', function (e) {
+    var del = e.target.closest('[data-delete]');
     if (del && confirm('Remove this winner? Their entry goes back into the draw.')) {
         api({ action: 'delete', id: +del.dataset.delete }).then(function () { location.reload(); });
-    }
-    if (notify) {
-        notify.classList.add('loading');
-        api({ action: 'notify', id: +notify.dataset.notify }).then(function (res) {
-            notify.classList.remove('loading'); alert(res.message);
-        });
     }
 });
 
@@ -316,7 +325,4 @@ document.getElementById('fullscreenBtn').addEventListener('click', function () {
 document.fonts && document.fonts.ready.then(draw);
 refresh();
 </script>
-<style>
-#stage:fullscreen { background: var(--bg); padding: 32px; overflow: auto; }
-</style>
 <?php admin_footer(); ?>

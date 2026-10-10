@@ -30,53 +30,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $pdo->prepare("SELECT purchase_id, entry_date FROM lucky_draw_entries WHERE customer_id = ? ORDER BY entry_date DESC");
             $stmt->execute([$customer['customer_id']]);
             $entries = $stmt->fetchAll();
-            $stmt = $pdo->prepare("SELECT prize, drawn_at FROM winners WHERE customer_id = ? ORDER BY drawn_at");
+            $stmt = $pdo->prepare("SELECT prize FROM winners WHERE customer_id = ? ORDER BY drawn_at");
             $stmt->execute([$customer['customer_id']]);
-            $wins = $stmt->fetchAll();
+            $wins = $stmt->fetchAll(PDO::FETCH_COLUMN);
         }
     }
 }
 
-public_head('Semak penyertaan');
+public_page_start('Semak penyertaan', 'Semak penyertaan');
 ?>
-<div class="wrap">
-    <?php brand_block('Semak Penyertaan'); ?>
-
-    <div class="card">
-        <form method="POST">
-            <div class="field">
-                <label for="phone">No. telefon bimbit yang didaftarkan</label>
-                <input type="tel" id="phone" name="phone" required inputmode="tel" placeholder="Contoh: 012-345 6789" value="<?php echo e($_POST['phone'] ?? ''); ?>">
-            </div>
-            <button class="btn btn-primary btn-block" type="submit">🔎 Semak</button>
-        </form>
-    </div>
-
-    <?php if ($error): ?>
-        <div class="card"><div class="alert alert-error" style="margin:0"><?php echo e($error); ?></div></div>
-    <?php elseif ($customer): ?>
-        <div class="card">
-            <?php if ($wins): ?>
-                <div class="alert alert-warn">🏆 <strong>Tahniah! Anda seorang pemenang:</strong>
-                    <?php foreach ($wins as $w): ?><br>• <?php echo e($w['prize'] ?: 'Hadiah cabutan bertuah'); ?><?php endforeach; ?>
-                    <br><small>Pihak kami akan menghubungi anda.</small>
-                </div>
-            <?php endif; ?>
-            <div class="text-center">
-                <div class="muted" style="font-size:14px"><?php echo e(mask_name($customer['customer_name'])); ?> · <?php echo e($customer['customer_id']); ?></div>
-                <div class="big-id"><small>Jumlah peluang anda</small><strong><?php echo (int)$customer['total_entries']; ?></strong></div>
-            </div>
-            <div class="list">
-                <?php foreach ($entries as $entry): ?>
-                    <div class="list-item">
-                        <strong class="mono"><?php echo e(mask_code($entry['purchase_id'])); ?></strong>
-                        <span class="faint" style="font-size:13px"><?php echo e(format_datetime($entry['entry_date'], 'd M Y, g:i A')); ?></span>
-                    </div>
-                <?php endforeach; ?>
-            </div>
+<div class="card">
+    <form method="POST">
+        <div class="field">
+            <label for="phone">No. telefon bimbit yang didaftarkan</label>
+            <input type="tel" id="phone" name="phone" required inputmode="tel" placeholder="Contoh: 012-345 6789" value="<?php echo e($_POST['phone'] ?? ''); ?>">
         </div>
-    <?php endif; ?>
-
-    <div class="text-center mt-2"><a href="index.php">← Laman utama</a></div>
+        <div class="form-actions"><button class="btn btn-primary btn-block" type="submit"><?php echo icon('search'); ?>Semak</button></div>
+    </form>
 </div>
-<?php public_foot(); ?>
+
+<?php if ($error): ?>
+    <?php echo alert_box('error', e($error)); ?>
+<?php elseif ($customer): ?>
+    <?php if ($wins): ?>
+        <?php echo alert_box('warning', '<b>Tahniah, anda seorang pemenang!</b><br>' . implode('<br>', array_map(function ($p) { return e($p ?: 'Hadiah cabutan bertuah'); }, $wins)) . '<br><span class="muted small">Pihak kami akan menghubungi anda.</span>'); ?>
+    <?php endif; ?>
+    <div class="card">
+        <div class="kv">
+            <div class="kv-row"><span>Nama</span><b><?php echo e(mask_name($customer['customer_name'])); ?></b></div>
+            <div class="kv-row"><span>ID Pelanggan</span><b class="mono"><?php echo e($customer['customer_id']); ?></b></div>
+            <div class="kv-row"><span>Jumlah penyertaan</span><b><?php echo (int)$customer['total_entries']; ?></b></div>
+        </div>
+        <hr class="divider">
+        <div class="label">Kod produk</div>
+        <div class="kv">
+            <?php foreach ($entries as $entry): ?>
+                <div class="kv-row"><b class="mono"><?php echo e(mask_code($entry['purchase_id'])); ?></b><span class="faint small"><?php echo e(format_datetime($entry['entry_date'])); ?></span></div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+<?php endif; ?>
+<?php
+public_actions([['Kembali ke laman utama', 'index.php', 'home']]);
+public_page_end();
+?>
