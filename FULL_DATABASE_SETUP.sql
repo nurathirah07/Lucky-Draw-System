@@ -1,9 +1,12 @@
--- Full database setup for astech_lucky (v2)
--- Import this in phpMyAdmin (Import tab) or run: mysql -u root < FULL_DATABASE_SETUP.sql
--- Upgrading an existing database? Use MIGRATION_v2.sql instead.
-
-CREATE DATABASE IF NOT EXISTS astech_lucky CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE astech_lucky;
+-- Full database setup for the ASTECH lucky draw system (creates all 7 tables, no data)
+--
+-- How to use:
+--   1. Create an empty database (character set utf8mb4, collation utf8mb4_unicode_ci):
+--        XAMPP:     phpMyAdmin > New > name it astech_lucky
+--        Hostinger: hPanel > Databases > create database + user (name will be like u123456789_astech)
+--   2. In phpMyAdmin, click that database, then Import > choose this file > Go.
+--   3. Put the database name, user and password in config.php.
+-- Safe to run more than once: existing tables are left as they are.
 
 CREATE TABLE IF NOT EXISTS admin_users (
     id INT AUTO_INCREMENT PRIMARY KEY,

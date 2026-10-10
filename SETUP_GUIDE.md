@@ -3,8 +3,8 @@
 ## Running it
 1. Start **Apache** and **MySQL** in the XAMPP Control Panel.
 2. Database:
-   - **New install:** import `FULL_DATABASE_SETUP.sql` in phpMyAdmin (Import tab).
-   - **Upgrading from v1:** import `MIGRATION_v2.sql` (safe to run more than once).
+   - **New install:** create an empty database in phpMyAdmin (e.g. `astech_lucky`), click it, then **Import** `FULL_DATABASE_SETUP.sql`.
+   - **Moving an existing system** (e.g. to Hostinger): **Export** your database from phpMyAdmin and **Import** that file instead. It also copies your settings, codes and entries.
 3. In `config.php`, set `$base_url` to this computer's LAN IP, e.g. `http://192.168.0.116/astech_lucky`.
 4. Register an admin at `admin_register.php`, then log in at `admin_lucky.php`.
 
